@@ -56,7 +56,7 @@ int
 main(int argc, char **argv)
 {
 	FILE *fp;
-	char bufchar;
+	int bufchar;
 	input_state_t input_state = IS_NORMAL;
 	int exit_code = 0;
 	int remove_whitespace = 0;

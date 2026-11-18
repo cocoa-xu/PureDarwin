@@ -35,7 +35,7 @@ export MakeInc_dir=${VERSDIR}/makedefs/MakeInc.dir
 UNAME_S := $(shell uname -s)
 
 ifeq ($(UNAME_S),Linux)
-	export SYSCTL_HW_PHYSICALCPU := $(shell grep -E '^core id' /proc/cpuinfo | sort -u | wc -l)
+	export SYSCTL_HW_PHYSICALCPU := $(shell n=$$(grep -E '^core id' /proc/cpuinfo | sort -u | wc -l); if [ "$$n" -gt 0 ]; then echo $$n; else nproc; fi)
 	export SYSCTL_HW_LOGICALCPU  := $(shell grep -E '^processor' /proc/cpuinfo | sort -u | wc -l)
 else
 	export SYSCTL_HW_PHYSICALCPU := $(shell /usr/sbin/sysctl -n hw.physicalcpu)
