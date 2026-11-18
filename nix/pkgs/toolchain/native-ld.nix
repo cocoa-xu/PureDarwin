@@ -26,7 +26,7 @@
 , libtapi
 , targetTriple ? "x86_64-apple-darwin20.4"
 , appleSdk
-# the external corecrypto tree (flake input corecrypto-src), host_corecrypto_static comes from its pd/host-static.cmake
+# the external corecrypto tree (corecrypto-src in flake.nix), host_corecrypto_static comes from its pd/host-static.cmake
 , corecryptoSrc
 }:
 

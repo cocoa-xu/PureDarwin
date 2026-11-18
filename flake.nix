@@ -6,18 +6,16 @@
     xnu-loader.url = "github:PureDarwin/xnu-loader/xnu-12377";
     # the interim corecrypto fork, the submodule at external/corecrypto
     self.submodules = true;
-    corecrypto-src = {
-      url = "path:./external/corecrypto";
-      flake = false;
-    };
     # the MOK key pair that signs Secure Boot images, a placeholder until a build overrides it with
     # --override-input pd-sb-key path:/path/to/keydir, see nix/secureboot/no-key/README
     pd-sb-key = { url = "path:./nix/secureboot/no-key"; flake = false; };
   };
 
-  outputs = { self, nixpkgs, iig-tools, kc-tools, xnu-loader, corecrypto-src, pd-sb-key }:
+  outputs = { self, nixpkgs, iig-tools, kc-tools, xnu-loader, pd-sb-key }:
     let
       lib = nixpkgs.lib;
+      # not a path: input, which resolves into the whole tree and carries its hash into every build
+      corecrypto-src = builtins.path { path = ./external/corecrypto; name = "corecrypto-source"; };
       systems = [ "x86_64-linux" "x86_64-darwin" "aarch64-linux" "aarch64-darwin" ];
       forAllSystems = lib.genAttrs systems;
 

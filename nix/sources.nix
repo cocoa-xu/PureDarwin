@@ -211,7 +211,7 @@ let
     "src/Libraries/libcxxabi/config"
     # cxxabi.h, which ld64 includes directly
     "src/Libraries/libcxxabi/include"
-    # corecrypto headers come from the corecrypto-src flake input, build.nix passes PD_CORECRYPTO_DIR
+    # corecrypto headers come from corecrypto-src (external/corecrypto), build.nix passes PD_CORECRYPTO_DIR
     "src/Libraries/CommonCrypto/include"
     "src/Libraries/CommonCrypto/libcn/pd_cc_digest_bridge.c"
     "src/Libraries/libSystem/libc/stdlib/FreeBSD/reallocf.c"
