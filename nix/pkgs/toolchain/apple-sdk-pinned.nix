@@ -2,9 +2,12 @@
 
 let
   workspaceRoot = ../../..;
+  # the SDK takes no implementation file: without this, a .c edit in CoreFoundation or libc rebuilt the toolchain
+  implementation = lib.fileset.fileFilter
+    (file: lib.any file.hasExt [ "c" "cc" "cpp" "cxx" "m" "mm" "s" "S" ]) workspaceRoot;
   root = lib.fileset.toSource {
     root = workspaceRoot;
-    fileset = lib.fileset.unions (map (path: workspaceRoot + path) [
+    fileset = lib.fileset.difference (lib.fileset.unions (map (path: workspaceRoot + path) [
       /src/Kernel/xnu/EXTERNAL_HEADERS
       /src/Kernel/xnu/bsd/arm
       /src/Kernel/xnu/bsd/riscv
@@ -86,7 +89,7 @@ let
       /src/Libraries/syslog/libsystem_asl.tproj/include
       /tools/cctools/include/mach-o
       /tools/mig/mig.sh
-    ]);
+    ])) implementation;
   };
   # Security.framework: headers from the same list the framework package uses,
   # and a tbd generated from its checked-in exports so -framework Security
