@@ -175,6 +175,21 @@ static CFPropertyListRef GetPropertyListFromCache(void);
 static CFPropertyListRef CreateMyPropertyListFromCachedFile(const char *posixfile);
 static bool require_jobs_from_cache(void);
 #endif
+
+static bool
+iokit_quiet_wait_disabled(void)
+{
+	char buf[1024];
+	size_t len = sizeof(buf);
+	char *ptr;
+
+	if (sysctlbyname("kern.bootargs", buf, &len, NULL, 0) != 0) {
+		return false;
+	}
+	ptr = strnstr(buf, "pd_quiet_wait=", len);
+	return ptr != NULL && strtoul(ptr + strlen("pd_quiet_wait="), NULL, 10) == 0;
+}
+
 static CFPropertyListRef CreateMyPropertyListFromFile(const char *);
 static CFPropertyListRef CFPropertyListCreateFromFile(CFURLRef plistURL);
 static void WriteMyPropertyListToFile(CFPropertyListRef, const char *);
@@ -2480,7 +2495,7 @@ system_specific_bootstrap(bool sflag)
 	boot_progress(832);
 
 	/* See <rdar://problem/5066316>. */
-	if (!_launchctl_apple_internal) {
+	if (!_launchctl_apple_internal && !iokit_quiet_wait_disabled()) {
 		mach_timespec_t w = { 5, 0 };
 		IOKitWaitQuiet(kIOMasterPortDefault, &w);
 	}

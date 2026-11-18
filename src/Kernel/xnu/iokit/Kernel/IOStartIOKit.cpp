@@ -68,21 +68,31 @@ SECURITY_READ_ONLY_LATE(static IOPlatformExpertDevice*) gRootNub;
 
 #include <kern/clock.h>
 #include <sys/time.h>
+#include <pexpert/pexpert.h>
 
 void
 IOKitInitializeTime( void )
 {
 	mach_timespec_t         t;
+	uint32_t                rtc_wait = 30;
+	uint32_t                quiet_wait = 30;
 
 	t.tv_sec = 30;
 	t.tv_nsec = 0;
 
-	IOService::waitForService(
-		IOService::resourceMatching("IORTC"), &t );
+	PE_parse_boot_argn("pd_rtc_wait", &rtc_wait, sizeof(rtc_wait));
+	PE_parse_boot_argn("pd_quiet_wait", &quiet_wait, sizeof(quiet_wait));
+
+	if (rtc_wait != 0) {
+		mach_timespec_t r = { rtc_wait, 0 };
+
+		IOService::waitForService(
+			IOService::resourceMatching("IORTC"), &r );
+	}
 	// Without an RTC the wait above ran its full 30 s, and root mount came to rely on storage
 	// matching being done by then: with one, wait for the registry to settle instead
-	{
-		mach_timespec_t q = { 30, 0 };
+	if (quiet_wait != 0) {
+		mach_timespec_t q = { quiet_wait, 0 };
 
 		IOService::getServiceRoot()->waitQuiet(&q);
 	}
