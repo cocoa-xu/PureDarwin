@@ -123,12 +123,13 @@ PDArmGICController::initGIC(volatile uint8_t *gicd, bool v2)
 	__asm__ volatile ("mrs %0, MPIDR_EL1" : "=r"(mpidr));
 	fRoute = ((mpidr >> 32) & 0xff) << 32 | (mpidr & 0xffffff);
 	// ITARGETSR0 reads back the calling cpu's own interface bit. every spi is Group 1 from the start, as a per-vector
-	// read-modify-write races drivers enabling neighbours and a Group 0 spi is an fiq the timer path swallows
+	// read-modify-write races drivers enabling neighbours and a Group 0 spi is an fiq the timer path swallows.
+	// on a gicv3 too: without firmware (a direct kernel boot) the spis are still in their reset Group 0
 	if (v2) {
 		fRoute = fGicd[GICD_ITARGETSR];
-		for (uint32_t w = 1; w < fLines / 32; w++)
-			dwrite(GICD_IGROUPR + w * 4, 0xffffffffu);
 	}
+	for (uint32_t w = 1; w < fLines / 32; w++)
+		dwrite(GICD_IGROUPR + w * 4, 0xffffffffu);
 
 	vectors = (IOInterruptVector *)IOMalloc(fLines * sizeof(IOInterruptVector));
 	if (vectors == NULL)
