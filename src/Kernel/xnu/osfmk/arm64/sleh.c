@@ -4129,6 +4129,16 @@ sleh_irq(arm_saved_state_t *state)
 static void
 pd_gicv2_startup(void)
 {
+	DTEntry gic;
+	char const *compat;
+	unsigned int size;
+
+	// HVF emulates a GICv3 but reports ID_AA64PFR0_EL1.GIC = 0: the tree's gic-v3 wins
+	if (SecureDTLookupEntry(NULL, "/arm-io/gic", &gic) == kSuccess &&
+	    SecureDTGetProperty(gic, "compatible", (void const **)&compat, &size) == kSuccess &&
+	    size >= 10 && strncmp(compat, "arm,gic-v3", 10) == 0) {
+		return;
+	}
 	// ID_AA64PFR0_EL1.GIC: 0 means no GICv3 system register interface
 	if (((__builtin_arm_rsr64("ID_AA64PFR0_EL1") >> 24) & 0xf) == 0) {
 		pd_gicv2_cpuif = ml_io_map(PD_GICV2_GICC_PHYS, 0x2000);

@@ -207,11 +207,12 @@ kernel_owned_gic(uint64_t *gicd, uint64_t *gicc)
 
 // /arm-io/gic from the loader, when the board's tree has a gic-v3: distributor and
 // redistributor region relative to the arm-io window. Without it, qemu virt's addresses
-static void
+static bool
 gic_v3_locate(void)
 {
 	IORegistryEntry *armio = IORegistryEntry::fromPath("/arm-io", gIODTPlane);
 	IORegistryEntry *gic = IORegistryEntry::fromPath("/arm-io/gic", gIODTPlane);
+	bool found = false;
 
 	if (gic != NULL && armio != NULL) {
 		OSData *compat = OSDynamicCast(OSData, gic->getProperty("compatible"));
@@ -228,10 +229,12 @@ gic_v3_locate(void)
 			if (r[3] != 0) {
 				gGicrSize = r[3];
 			}
+			found = true;
 		}
 	}
 	OSSafeReleaseNULL(gic);
 	OSSafeReleaseNULL(armio);
+	return found;
 }
 
 // MPIDR to the Aff3.Aff2.Aff1.Aff0 layout GICR_TYPER reports
@@ -318,7 +321,8 @@ PDArmGIC_init(void)
 		return true;
 	}
 
-	if (gic_is_v2()) {
+	// HVF emulates a GICv3 but reports ID_AA64PFR0_EL1.GIC = 0: the tree's gic-v3 wins
+	if (!gic_v3_locate() && gic_is_v2()) {
 		gGicd = map_phys(GIC_GICD_BASE_PHYS, GIC_GICD_SIZE, &gGicdMap);
 		gGicc = map_phys(GIC2_GICC_BASE_PHYS, GIC2_GICC_SIZE, &gGiccMap);
 		if (gGicd == NULL || gGicc == NULL) {
@@ -335,7 +339,6 @@ PDArmGIC_init(void)
 		return true;
 	}
 
-	gic_v3_locate();
 	gGicd = map_phys(gGicdPhys, GIC_GICD_SIZE, &gGicdMap);
 	gGicrAll = map_phys(gGicrPhys, round_page_64(gGicrSize), &gGicrAllMap);
 	{
