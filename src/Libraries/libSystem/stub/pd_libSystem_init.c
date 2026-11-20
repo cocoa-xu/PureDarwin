@@ -303,6 +303,8 @@ static void pd_libSystem_initializer(int argc, const char *argv[], const char *e
 		_libc_initializer(&libc_funcs, envp, apple, vars);
 	}
 
+	// the exported vm_page_size is a 4096 placeholder until now; libmalloc places its guard pages with it
+	vm_page_size = (vm_size_t)getpagesize();
 	__malloc_init(apple);
 	__libdarwin_init();
 
