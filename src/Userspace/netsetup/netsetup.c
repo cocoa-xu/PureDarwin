@@ -19,6 +19,7 @@
 #include <sys/socket.h>
 #include <sys/sockio.h>
 #include <sys/stat.h>
+#include <sys/sysctl.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -326,11 +327,59 @@ apply_network_config(const struct pd_network_config *cfg)
     return rc;
 }
 
+static int
+boot_arg(const char *args, const char *key, char *out, size_t outlen)
+{
+    size_t klen = strlen(key);
+
+    for (const char *p = args; (p = strstr(p, key)) != NULL; p += klen) {
+        if ((p == args || p[-1] == ' ') && p[klen] == '=') {
+            const char *v = p + klen + 1;
+            size_t n = strcspn(v, " ");
+
+            if (n == 0 || n >= outlen)
+                return 0;
+            memcpy(out, v, n);
+            out[n] = '\0';
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int
+config_from_boot_args(struct pd_network_config *cfg)
+{
+    static char args[1024], addr[32], mask[32], router[32], dns[32], broadcast[32];
+    size_t len = sizeof(args) - 1;
+    struct in_addr a, m;
+
+    if (sysctlbyname("kern.bootargs", args, &len, NULL, 0) != 0)
+        return 0;
+    args[len] = '\0';
+    if (!boot_arg(args, "pd_ip", addr, sizeof(addr)))
+        return 0;
+    cfg->addr = addr;
+    if (boot_arg(args, "pd_mask", mask, sizeof(mask)))
+        cfg->mask = mask;
+    if (boot_arg(args, "pd_gw", router, sizeof(router)))
+        cfg->router = router;
+    if (boot_arg(args, "pd_dns", dns, sizeof(dns)))
+        cfg->dns = dns;
+    if (inet_aton(cfg->addr, &a) && inet_aton(cfg->mask, &m)) {
+        a.s_addr |= ~m.s_addr;
+        strlcpy(broadcast, inet_ntoa(a), sizeof(broadcast));
+        cfg->broadcast = broadcast;
+    }
+    return 1;
+}
+
 static void
 usage(const char *prog)
 {
     printf("usage:\n");
     printf("  %s [--wait SECONDS] [IFNAME IFADDR NETMASK GATEWAY [DNS [BROADCAST]]]\n", prog);
+    printf("  %s --from-bootargs   (pd_ip= [pd_mask=] [pd_gw=] [pd_dns=]; nothing without pd_ip)\n", prog);
     printf("environment overrides:\n");
     printf("  PUREDARWIN_NET_IFACE PUREDARWIN_NET_ADDR PUREDARWIN_NET_MASK\n");
     printf("  PUREDARWIN_NET_ROUTER PUREDARWIN_NET_DNS PUREDARWIN_NET_BROADCAST\n");
@@ -354,6 +403,12 @@ main(int argc, char **argv)
     while (argi < argc && strncmp(argv[argi], "--", 2) == 0) {
         if (strcmp(argv[argi], "--no-resolver") == 0) {
             cfg.write_resolver = 0;
+            argi++;
+        } else if (strcmp(argv[argi], "--from-bootargs") == 0) {
+            if (!config_from_boot_args(&cfg)) {
+                pd_log("no pd_ip boot-arg, leaving the network alone");
+                return 0;
+            }
             argi++;
         } else if (strcmp(argv[argi], "--wait") == 0 && argi + 1 < argc) {
             cfg.wait_seconds = atoi(argv[argi + 1]);

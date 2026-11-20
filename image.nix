@@ -446,6 +446,35 @@ if test -x /bin/hostname; then
     /bin/hostname puredarwin
 fi
 EOF
+    cat > $staging/usr/libexec/pd-net-up <<'EOF'
+#!/bin/sh
+case " $(/bin/sysctl -n kern.bootargs) " in
+*" pd_ip="*)
+    /bin/netsetup --from-bootargs
+    ;;
+esac
+EOF
+    chmod +x $staging/usr/libexec/pd-net-up
+    cat > $staging/System/Library/LaunchDaemons/org.puredarwin.net-up.plist <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>org.puredarwin.net-up</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/usr/libexec/pd-net-up</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>/dev/console</string>
+	<key>StandardErrorPath</key>
+	<string>/dev/console</string>
+</dict>
+</plist>
+EOF
     cat > $staging/System/Library/LaunchDaemons/org.puredarwin.hostname.plist <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
