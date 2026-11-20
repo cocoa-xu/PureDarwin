@@ -22,6 +22,23 @@ void SecTrustLegacySourcesListenForKeychainEvents(void)
 {
 }
 
+// macOS 12's replacement for the index getters, which Go's crypto/x509 binds at launch
+CFArrayRef SecTrustCopyCertificateChain(SecTrustRef trust)
+{
+    CFIndex count = SecTrustGetCertificateCount(trust);
+    CFMutableArrayRef chain;
+
+    if (count <= 0)
+        return NULL;
+    chain = CFArrayCreateMutable(kCFAllocatorDefault, count, &kCFTypeArrayCallBacks);
+    for (CFIndex i = 0; chain != NULL && i < count; i++) {
+        SecCertificateRef cert = SecTrustGetCertificateAtIndex(trust, i);
+        if (cert != NULL)
+            CFArrayAppendValue(chain, cert);
+    }
+    return chain;
+}
+
 OSStatus SecTrustSettingsCopyCertificatesForUserAdminDomains(CFArrayRef *certArray)
 {
     if (certArray)
