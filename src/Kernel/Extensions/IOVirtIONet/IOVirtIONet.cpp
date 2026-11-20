@@ -8,10 +8,48 @@
  */
 #include "IOVirtIONet.h"
 #include <IOKit/assert.h>
+#include <IOKit/IOBSD.h>
 #include <IOKit/IOLib.h>
 #include <IOKit/network/IONetworkMedium.h>
 #include <IOKit/network/IOOutputQueue.h>
+#include <kern/thread.h>
 #include <libkern/OSByteOrder.h>
+
+// IONetworkStack.h: kIONetworkStackUserCommandKey, kIONetworkStackRegisterInterfaceAll
+static const char *const kStackCommandKey = "IONetworkStackUserCommand";
+static const unsigned long long kStackRegisterAll = 2;
+
+// A guest without configd has no InterfaceNamer, and IONetworkStack leaves the interface
+// unnamed (no en0) until someone asks: ask the way IORegisterNetworkInterface does, for up to 60 s
+static void
+nameInterfaceThread(void *arg, wait_result_t)
+{
+    IOService *netif = (IOService *)arg;
+
+    for (int i = 0; i < 120; i++) {
+        OSObject *name = netif->copyProperty(kIOBSDNameKey);
+        bool named = OSDynamicCast(OSString, name) != NULL;
+        OSSafeReleaseNULL(name);
+        if (named)
+            break;
+
+        OSDictionary *match = IOService::serviceMatching("IONetworkStack");
+        IOService *stack = match ? IOService::copyMatchingService(match) : NULL;
+        OSDictionary *cmd = OSDictionary::withCapacity(1);
+        OSNumber *all = OSNumber::withNumber(kStackRegisterAll, 32);
+        if (stack && cmd && all) {
+            cmd->setObject(kStackCommandKey, all);
+            stack->setProperties(cmd);
+        }
+        OSSafeReleaseNULL(all);
+        OSSafeReleaseNULL(cmd);
+        OSSafeReleaseNULL(stack);
+        OSSafeReleaseNULL(match);
+        IOSleep(500);
+    }
+    netif->release();
+    thread_terminate(current_thread());
+}
 
 #define super IOEthernetController
 OSDefineMetaClassAndStructors(IOVirtIONet, IOEthernetController);
@@ -173,6 +211,13 @@ bool IOVirtIONet::start(IOService *provider)
     setLinkStatus(kIONetworkLinkValid | kIONetworkLinkActive, getCurrentMedium());
 
     registerService();
+
+    thread_t namer;
+    fInterface->retain();
+    if (kernel_thread_start(nameInterfaceThread, fInterface, &namer) == KERN_SUCCESS)
+        thread_deallocate(namer);
+    else
+        fInterface->release();
     return true;
 }
 
