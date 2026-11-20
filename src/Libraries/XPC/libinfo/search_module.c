@@ -960,8 +960,8 @@ si_module_static_search(void)
 #ifdef DS_AVAILABLE
 			"ds",
 #endif
-			"mdns",
 			"file",
+			"mdns",
 		};
 
 		int count = sizeof(modules) / sizeof(char *);
