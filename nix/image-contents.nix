@@ -1372,7 +1372,7 @@ let
         espMB = 64;
         rootMB = 512;
         imageFileName = "puredarwin-arm64-virt-minimal-release.img";
-        bootArgs = "-v serial=3 ahci_debug=1 kext=0xffff io=0xffff pd_rtc_wait=0 pd_quiet_wait=0";
+        bootArgs = "-v serial=3 ahci_debug=1 kext=0xffff io=0xffff pd_rtc_wait=5 pd_rtc_delay=0 pd_quiet_wait=0";
       };
       # Wayland-only image: no X server, no X client, no X library anywhere on
       # the image. Anything that links libX11/libxcb either gets dropped here

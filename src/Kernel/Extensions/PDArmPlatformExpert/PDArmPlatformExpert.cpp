@@ -268,16 +268,19 @@ PDArmPlatformExpert::startQemuRTC(void)
 		fRTC = (volatile uint32_t *)fRTCMap->getVirtualAddress();
 	}
 	// Root mount relied on the 30 s IOKitInitializeTime spent waiting for this: APFS still holds the
-	// container a few seconds after IOKit goes quiet, so IORTC is published 10 s later
+	// container a few seconds after IOKit goes quiet, so IORTC is published 10 s later (pd_rtc_delay=<s>).
+	// A boot that skips the IOKit waits must not initialize the calendar before this: give it pd_rtc_delay=0
 	{
 		uint64_t deadline;
+		uint32_t delay = 10;
 
-		fRTCPublish = thread_call_allocate(&PDArmPlatformExpert::publishRTC, this);
+		PE_parse_boot_argn("pd_rtc_delay", &delay, sizeof(delay));
+		fRTCPublish = delay ? thread_call_allocate(&PDArmPlatformExpert::publishRTC, this) : NULL;
 		if (fRTCPublish == NULL) {
 			publishResource("IORTC", this);
 			return;
 		}
-		clock_interval_to_deadline(10, kSecondScale, &deadline);
+		clock_interval_to_deadline(delay, kSecondScale, &deadline);
 		thread_call_enter_delayed(fRTCPublish, deadline);
 	}
 }
