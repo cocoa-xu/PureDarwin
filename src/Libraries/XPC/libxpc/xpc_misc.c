@@ -194,8 +194,11 @@ xpc_copy_description_level(xpc_object_t obj, struct sbuf *sbuf, int level)
 		sbuf_printf(sbuf, "<%lld>\n", xo->xo_int);
 	} else if (xo->xo_xpc_type == XPC_TYPE_NULL) {
 		sbuf_printf(sbuf, "<null>\n");
+	} else if (xo->xo_xpc_type == XPC_TYPE_DATA) {
+		sbuf_printf(sbuf, "<%zu bytes>\n", xpc_data_get_length(obj));
 	} else {
-		xpc_api_misuse("Unknown XPC type");
+		// the type name is already printed; a description must not abort the process (trustd logs certificates)
+		sbuf_printf(sbuf, "\n");
 	}
 }
 
