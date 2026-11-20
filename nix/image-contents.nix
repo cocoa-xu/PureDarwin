@@ -348,6 +348,10 @@
 , yajlBuild
 , asmjitTestArm64Build
 , zshArm64Build
+, securityArm64Build
+, systemConfigurationArm64Build
+, coreServicesArm64Build
+, libzDylibArm64Build
 , pdadbdArm64Build ? null
 , zshBuild
 , bashBuild
@@ -1373,6 +1377,31 @@ let
         rootMB = 512;
         imageFileName = "puredarwin-arm64-virt-minimal-release.img";
         bootArgs = "-v serial=3 ahci_debug=1 kext=0xffff io=0xffff pd_rtc_wait=5 pd_rtc_delay=0 pd_quiet_wait=0";
+      };
+      # SystemConfiguration for what links it, without configd: a container's address comes from its
+      # boot-args, and IPConfiguration would take en0 over with DHCP
+      systemConfigurationNoConfigdArm64 = pkgs.runCommand "puredarwin-systemconfiguration-no-configd-0.1" { } ''
+        cp -a ${systemConfigurationArm64Build} $out
+        chmod -R u+w $out
+        rm -f $out/System/Library/LaunchDaemons/com.apple.configd.plist
+      '';
+      # the minimal release plus the frameworks command-line tools link most (adb: Security; curl:
+      # SystemConfiguration; anything with gettext: CoreServices), for running macOS CLIs in a VM
+      imageArm64VirtContainerBuild = pkgs.callPackage ../image.nix {
+        baseSystem = splitBaseSystemArm64VirtMinimalRelease;
+        extraPackages = [
+          zshArm64Build libiconvArm64Build toyboxArm64Build
+          securityArm64Build systemConfigurationNoConfigdArm64 coreServicesArm64Build
+          libzDylibArm64Build certificatesBundleBuild
+        ];
+        kc = kcArm64ReleaseBuild;
+        xnuLoader = xnuLoaderArm64;
+        apfsprogs = pkgs.apfsprogs;
+        efiBinary = "BOOTAA64.EFI";
+        espMB = 64;
+        rootMB = 1024;
+        imageFileName = "puredarwin-arm64-virt-container.img";
+        bootArgs = "serial=3 pd_rtc_wait=5 pd_rtc_delay=0 pd_quiet_wait=0";
       };
       # Wayland-only image: no X server, no X client, no X library anywhere on
       # the image. Anything that links libX11/libxcb either gets dropped here
@@ -2598,6 +2627,7 @@ EOF
       image-arm64-sg2002 = imageArm64Sg2002Build;
       netboot-arm64-virt-minimal = netbootArm64VirtMinimalBuild;
       image-arm64-virt-minimal-release = imageArm64VirtMinimalReleaseBuild;
+      image-arm64-virt-container = imageArm64VirtContainerBuild;
       image-arm64-virt-wayland = imageArm64VirtWaylandBuild;
       image-arm64-virt-wayland-debug = imageArm64VirtWaylandDebugBuild;
       image-hfs = imageHfsBuild;

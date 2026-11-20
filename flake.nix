@@ -5280,7 +5280,7 @@
               xvfbLibXineramaBuild xvfbLibXkbfileBuild xvfbLibXpresentBuild xvfbLibXrandrBuild
               xvfbLibXrenderBuild xvfbLibXresBuild xvfbLibxcvtBuild xvfbZlibBuild xxdBuild xzBuild
               unzipBuild bzip2Build e2fsprogsBuild msdosCmdsBuild pdblessBuild
-              yajlBuild zshArm64Build zshBuild bashBuild libcrocoBuild librsvgBuild gettextBuild
+              yajlBuild zshArm64Build securityArm64Build systemConfigurationArm64Build coreServicesArm64Build libzDylibArm64Build zshBuild bashBuild libcrocoBuild librsvgBuild gettextBuild
               webkitgtkBuild libsoupBuild sqliteBuild libpslBuild nghttp2Build
               libgcryptBuild libgpgErrorBuild libtasn1Build libjpegBuild libwebpBuild
               ;
