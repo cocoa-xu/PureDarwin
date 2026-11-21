@@ -1386,10 +1386,11 @@ let
         rm -f $out/System/Library/LaunchDaemons/com.apple.configd.plist
       '';
       # launchd's container settings: any uid, with or without a passwd entry, uses the system
-      # bootstrap namespace, as no login session ever starts a per-user launchd in a container
+      # bootstrap namespace, as no login session ever starts a per-user launchd in a container;
+      # /tmp survives a restart and a commit, as in a container's writable layer
       containerLaunchdSettings = pkgs.runCommand "puredarwin-container-launchd-settings-0.1" { } ''
         mkdir -p $out/private/var/db
-        touch $out/private/var/db/.launchd_no_per_user
+        touch $out/private/var/db/.launchd_no_per_user $out/private/var/db/.launchd_keep_tmp
       '';
       # the minimal release plus the frameworks command-line tools link most (adb: Security; curl:
       # SystemConfiguration; anything with gettext: CoreServices), for running macOS CLIs in a VM

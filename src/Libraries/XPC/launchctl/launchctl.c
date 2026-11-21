@@ -2448,7 +2448,9 @@ system_specific_bootstrap(bool sflag)
 
 	boot_progress(640);
 	empty_dir(_PATH_VARRUN, NULL);
-	empty_dir(_PATH_TMP, NULL);
+	if (!path_check("/private/var/db/.launchd_keep_tmp")) {
+		empty_dir(_PATH_TMP, NULL);
+	}
 	(void)remove(_PATH_NOLOGIN);
 
 	if (path_check("/usr/libexec/dirhelper")) {
