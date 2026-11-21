@@ -58,6 +58,9 @@ enum {
     // VIRTIO_NET_F_MAC (bit 5): device config's mac[] field is valid and
     // should be used as the interface's persistent address.
     VIRTIO_NET_F_MAC = (1u << 5),
+    // VIRTIO_NET_F_MTU (bit 3): config's mtu is the device's maximum. Virtualization.framework's
+    // device clears FEATURES_OK unless the driver accepts it; 1500 fits the receive buffers.
+    VIRTIO_NET_F_MTU = (1u << 3),
 };
 
 bool IOVirtIONet::init(OSDictionary *properties)
@@ -158,7 +161,7 @@ bool IOVirtIONet::start(IOService *provider)
         IOLog("IOVirtIONet: failed to find/map virtio-pci capabilities\n");
         return false;
     }
-    if (!fTransport.negotiateFeatures(VIRTIO_NET_F_MAC)) {
+    if (!fTransport.negotiateFeatures(fTransport.deviceFeaturesLow() & (VIRTIO_NET_F_MAC | VIRTIO_NET_F_MTU))) {
         IOLog("IOVirtIONet: device rejected feature negotiation\n");
         return false;
     }
