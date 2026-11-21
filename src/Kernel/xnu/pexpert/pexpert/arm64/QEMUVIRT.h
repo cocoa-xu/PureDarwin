@@ -72,8 +72,8 @@
 #define QEMUVIRT_PUT32(addr, value) do { *((volatile uint32_t *) addr) = value; } while(0)
 #define QEMUVIRT_GET32(addr) *((volatile uint32_t *) addr)
 
-#define PLATFORM_PANIC_LOG_PADDR  0x47000000ULL
-#define PLATFORM_PANIC_LOG_SIZE   16384        // 16kb
+/* no fixed panic log: 0x47000000 is RAM the loader never reserved on QEMU virt, and the PCI ECAM
+ * window under Virtualization.framework, where clearing it aborts the boot in arm_init */
 #endif /* ! ASSEMBLER */
 
 #endif /* ! _PEXPERT_ARM_QEMUVIRT_H */
