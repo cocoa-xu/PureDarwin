@@ -44,8 +44,19 @@ bool PDArmPCI::start(IOService *provider)
 {
     IOLog("PureDarwin PDArmPCI: start provider=%s\n",
           provider ? provider->getName() : "(null)");
-    pd_pci_pick_ecam();
-    ecamMemory = IODeviceMemory::withRange(sECAMBase, sECAMLength);
+    // a host bridge node imported from the board's tree (Virtualization.framework: 0x40000000)
+    // says where its ECAM is; the loader's own bare node on QEMU virt does not
+    IODeviceMemory *reg = provider ? provider->getDeviceMemoryWithIndex(0) : NULL;
+    if (reg && reg->getLength() >= (1ULL << 20)) {
+        sECAMBase = reg->getPhysicalAddress();
+        sECAMLength = reg->getLength();
+        sECAMBuses = sECAMLength >= (256ULL << 20) ? 256 : (UInt32)(sECAMLength >> 20);
+        ecamMemory = reg;
+        ecamMemory->retain();
+    } else {
+        pd_pci_pick_ecam();
+        ecamMemory = IODeviceMemory::withRange(sECAMBase, sECAMLength);
+    }
     if (!ecamMemory)
         return false;
 
@@ -62,9 +73,47 @@ bool PDArmPCI::start(IOService *provider)
 bool PDArmPCI::configure(IOService *provider)
 {
     IOLog("PureDarwin PDArmPCI: configure\n");
-    /* QEMU virt's low MMIO window is 0x10000000..0x3efeffff; PIO and the low ECAM follow it */
-    addBridgeMemoryRange(0x10000000ULL, 0x2eff0000ULL, true);
+    if (!addRangesWindow(provider)) {
+        /* QEMU virt's low MMIO window is 0x10000000..0x3efeffff; PIO and the low ECAM follow it */
+        addBridgeMemoryRange(0x10000000ULL, 0x2eff0000ULL, true);
+    }
     return super::configure(provider);
+}
+
+// the node's 32-bit non-prefetchable memory window from ranges (3 pci cells, then the parent's address
+// cells and 2 size cells; the loader stores 2 or more cells as one u64 in their last two). VZ's is
+// 0x50000000 + 0x1ffe0000, which QEMU virt's hardcoded window would miss, landing bars on the gic
+bool PDArmPCI::addRangesWindow(IOService *provider)
+{
+    OSData *ranges = provider ? OSDynamicCast(OSData, provider->getProperty("ranges")) : NULL;
+    IORegistryEntry *parent = provider ? provider->getParentEntry(gIODTPlane) : NULL;
+    OSData *pac = parent ? OSDynamicCast(OSData, parent->getProperty("#address-cells")) : NULL;
+    UInt32 parentCells = pac && pac->getLength() >= 4 ? *(const UInt32 *)pac->getBytesNoCopy() : 2;
+    UInt32 stride = (3 + parentCells + 2) * sizeof(UInt32);
+    bool added = false;
+
+    if (!ranges || parentCells < 1 || parentCells > 2)
+        return false;
+    const UInt8 *p = (const UInt8 *)ranges->getBytesNoCopy();
+    for (UInt32 at = 0; at + stride <= ranges->getLength(); at += stride) {
+        UInt32 hi;
+        UInt64 pci, cpu, size;
+        memcpy(&hi, p + at, sizeof(hi));
+        memcpy(&pci, p + at + 4, sizeof(pci));
+        if (parentCells == 1) {
+            UInt32 c;
+            memcpy(&c, p + at + 12, sizeof(c));
+            cpu = c;
+        } else {
+            memcpy(&cpu, p + at + 12, sizeof(cpu));
+        }
+        memcpy(&size, p + at + 12 + parentCells * 4, sizeof(size));
+        // space code 2 is 32-bit memory; bars are programmed with cpu addresses, so pci must equal cpu
+        if (((hi >> 24) & 3) != 2 || (hi & 0x40000000) || pci != cpu || cpu + size > 0x100000000ULL)
+            continue;
+        added = addBridgeMemoryRange((IOPhysicalAddress)cpu, (IOPhysicalLength)size, true) || added;
+    }
+    return added;
 }
 
 void PDArmPCI::free(void)

@@ -13,6 +13,7 @@ class PDArmPCI : public IOPCIBridge
     volatile UInt8 *configAddress(IOPCIAddressSpace space, UInt8 offset) const;
     bool routeINTx(UInt32 device, UInt32 pin, UInt32 *intid);
     void setINTx(IOPCIDevice *nub);
+    bool addRangesWindow(IOService *provider);
 
 public:
     IOService *probe(IOService *provider, SInt32 *score) APPLE_KEXT_OVERRIDE;
