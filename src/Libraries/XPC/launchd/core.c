@@ -8997,6 +8997,11 @@ job_mig_lookup_per_user_context(job_t j, uid_t which_user, mach_port_t *up_cont)
 	return BOOTSTRAP_UNKNOWN_SERVICE;
 #endif
 
+	if (launchd_no_per_user) {
+		job_log(j, LOG_DEBUG, "Per-user launchds are disabled by .launchd_no_per_user.");
+		return BOOTSTRAP_UNKNOWN_SERVICE;
+	}
+
 #if HAVE_SANDBOX
 	if (unlikely(sandbox_check(ldc->pid, "mach-per-user-lookup", SANDBOX_FILTER_NONE) > 0)) {
 		return BOOTSTRAP_NOT_PRIVILEGED;
@@ -9155,7 +9160,7 @@ job_mig_register2(job_t j, name_t servicename, mach_port_t serviceport, uint64_t
 	 * 92) is a rogue application (not our UID, not root and not a child of
 	 * us). We'll have to reconcile this design friction at a later date.
 	 */
-	if (unlikely(j->anonymous && j->mgr->parentmgr == NULL && ldc->uid != 0 && ldc->uid != getuid() && ldc->uid != 92)) {
+	if (unlikely(!launchd_no_per_user && j->anonymous && j->mgr->parentmgr == NULL && ldc->uid != 0 && ldc->uid != getuid() && ldc->uid != 92)) {
 		if (pid1_magic) {
 			return VPROC_ERR_TRY_PER_USER;
 		} else {
@@ -9213,7 +9218,7 @@ job_mig_look_up2(job_t j, mach_port_t srp, name_t servicename, mach_port_t *serv
 
 	// 5641783 for the embedded hack
 #if !TARGET_OS_EMBEDDED
-	if (unlikely(pid1_magic && j->anonymous && j->mgr->parentmgr == NULL && ldc->uid != 0 && ldc->euid != 0)) {
+	if (unlikely(pid1_magic && !launchd_no_per_user && j->anonymous && j->mgr->parentmgr == NULL && ldc->uid != 0 && ldc->euid != 0)) {
 		return VPROC_ERR_TRY_PER_USER;
 	}
 #endif

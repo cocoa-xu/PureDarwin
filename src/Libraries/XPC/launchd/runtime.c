@@ -145,6 +145,7 @@ bool launchd_log_debug = false;
 bool launchd_trap_sigkill_bugs = false;
 bool launchd_no_jetsam_perm_check = false;
 bool launchd_osinstaller = false;
+bool launchd_no_per_user = false;
 bool launchd_allow_global_dyld_envvars = false;
 #if TARGET_OS_EMBEDDED
 bool launchd_appletv = false;
@@ -1469,6 +1470,10 @@ do_file_init(void)
 
 	if (config_check("/etc/rc.cdrom", sb)) {
 		launchd_osinstaller = true;
+	}
+
+	if (pid1_magic && config_check(".launchd_no_per_user", sb)) {
+		launchd_no_per_user = true;
 	}
 
 	if (!pid1_magic && config_check(".launchd_allow_global_dyld_envvars", sb)) {

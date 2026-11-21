@@ -1385,6 +1385,12 @@ let
         chmod -R u+w $out
         rm -f $out/System/Library/LaunchDaemons/com.apple.configd.plist
       '';
+      # launchd's container settings: any uid, with or without a passwd entry, uses the system
+      # bootstrap namespace, as no login session ever starts a per-user launchd in a container
+      containerLaunchdSettings = pkgs.runCommand "puredarwin-container-launchd-settings-0.1" { } ''
+        mkdir -p $out/private/var/db
+        touch $out/private/var/db/.launchd_no_per_user
+      '';
       # the minimal release plus the frameworks command-line tools link most (adb: Security; curl:
       # SystemConfiguration; anything with gettext: CoreServices), for running macOS CLIs in a VM
       imageArm64VirtContainerBuild = pkgs.callPackage ../image.nix {
@@ -1392,7 +1398,7 @@ let
         extraPackages = [
           zshArm64Build libiconvArm64Build toyboxArm64Build
           securityArm64Build systemConfigurationNoConfigdArm64 coreServicesArm64Build
-          libzDylibArm64Build certificatesBundleBuild
+          libzDylibArm64Build certificatesBundleBuild containerLaunchdSettings
         ];
         kc = kcArm64ReleaseBuild;
         xnuLoader = xnuLoaderArm64;

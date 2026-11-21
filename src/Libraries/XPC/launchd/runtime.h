@@ -66,6 +66,7 @@ extern bool launchd_log_perf;
 extern bool launchd_trap_sigkill_bugs;
 extern bool launchd_no_jetsam_perm_check;
 extern bool launchd_osinstaller;
+extern bool launchd_no_per_user;
 extern bool launchd_allow_global_dyld_envvars;
 #if TARGET_OS_EMBEDDED
 extern bool launchd_appletv;
