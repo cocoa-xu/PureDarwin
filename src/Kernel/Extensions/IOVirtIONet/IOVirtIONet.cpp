@@ -63,6 +63,14 @@ enum {
     VIRTIO_NET_F_MTU = (1u << 3),
 };
 
+// Without an interrupt the rings are polled every kPollMs. With one, the timer only catches an
+// interrupt that never comes: kLostTicks ticks in a row that find frames no interrupt reported
+// put the driver back to polling.
+static const unsigned kPollMs = 5;
+static const unsigned kFallbackPollMs = 50;
+static const unsigned kLostTicks = 3;
+static const uint16_t VRING_AVAIL_F_NO_INTERRUPT = 1;
+
 bool IOVirtIONet::init(OSDictionary *properties)
 {
     if (!super::init(properties))
@@ -71,13 +79,18 @@ bool IOVirtIONet::init(OSDictionary *properties)
     fPCIDevice = NULL;
     fWorkLoop = NULL;
     fPollTimer = NULL;
+    fInterruptSource = NULL;
     fInterface = NULL;
     bzero(&fRxQ, sizeof(fRxQ));
     bzero(&fTxQ, sizeof(fTxQ));
     bzero(fRxBuf, sizeof(fRxBuf));
     bzero(fTxBuf, sizeof(fTxBuf));
+    fRxCount = fTxCount = 0;
     fTxNextSlot = 0;
     fTxOutstanding = 0;
+    fTxLock = NULL;
+    fUseInterrupts = false;
+    fInterrupts = fInterruptsAtTick = fLostTicks = 0;
     fEnabled = false;
     fRxPackets = fTxPackets = 0;
     bzero(&fMACAddress, sizeof(fMACAddress));
@@ -126,7 +139,7 @@ void IOVirtIONet::postRxBuffer(unsigned slot)
 
 bool IOVirtIONet::initRxRing()
 {
-    for (int i = 0; i < kVNetRxCount; i++) {
+    for (unsigned i = 0; i < fRxCount; i++) {
         fRxBuf[i] = IOBufferMemoryDescriptor::inTaskWithPhysicalMask(
             kernel_task, kIODirectionInOut | kIOMemoryPhysicallyContiguous,
             kVNetHdrSize + kVNetMaxPacket, 0xFFFFFFFFULL);
@@ -153,7 +166,7 @@ bool IOVirtIONet::start(IOService *provider)
         return false;
     }
 
-    // completions are polled, and an unacknowledged intx would hold a shared level line high
+    // intx stays masked until setupInterrupt() has a handler: an unacknowledged level line stays high
     fPCIDevice->configWrite16(kIOPCIConfigCommand,
         fPCIDevice->configRead16(kIOPCIConfigCommand) | kIOPCICommandInterruptDisable);
 
@@ -179,7 +192,14 @@ bool IOVirtIONet::start(IOService *provider)
         IOLog("IOVirtIONet: failed to init virtqueues\n");
         return false;
     }
-    for (int i = 0; i < kVNetTxCount; i++) {
+    fRxCount = fRxQ.queueSize;
+    fTxCount = fTxQ.queueSize;
+    // tx completions are collected when sending and on every rx pass, never worth an interrupt
+    ((VRingAvailHdr *)fTxQ.avail)->flags = VRING_AVAIL_F_NO_INTERRUPT;
+    fTxLock = IOLockAlloc();
+    if (!fTxLock)
+        return false;
+    for (unsigned i = 0; i < fTxCount; i++) {
         fTxBuf[i] = IOBufferMemoryDescriptor::inTaskWithPhysicalMask(
             kernel_task, kIODirectionInOut | kIOMemoryPhysicallyContiguous,
             kVNetHdrSize + kVNetMaxPacket, 0xFFFFFFFFULL);
@@ -203,6 +223,10 @@ bool IOVirtIONet::start(IOService *provider)
         IOLog("IOVirtIONet: failed to create poll timer\n");
         return false;
     }
+    if (!setupInterrupt())
+        IOLog("IOVirtIONet: no interrupt, polling every %u ms\n", kPollMs);
+    IOLog("IOVirtIONet: %u rx and %u tx buffers%s\n", fRxCount, fTxCount,
+          fUseInterrupts ? ", interrupt driven" : "");
 
     if (!publishLinkMedium())
         return false;
@@ -236,6 +260,11 @@ void IOVirtIONet::stop(IOService *provider)
     }
     if (fWorkLoop && fPollTimer)
         fWorkLoop->removeEventSource(fPollTimer);
+    if (fWorkLoop && fInterruptSource) {
+        if (fUseInterrupts)
+            stopInterrupt();
+        fWorkLoop->removeEventSource(fInterruptSource);
+    }
 
     super::stop(provider);
 }
@@ -252,6 +281,8 @@ void IOVirtIONet::free()
     fTransport.detach();
 
     if (fPollTimer) { fPollTimer->release(); fPollTimer = NULL; }
+    OSSafeReleaseNULL(fInterruptSource);
+    if (fTxLock) { IOLockFree(fTxLock); fTxLock = NULL; }
 
     if (fPCIDevice) {
         fPCIDevice->close(this);
@@ -300,7 +331,7 @@ IOReturn IOVirtIONet::enable(IONetworkInterface *interface)
         return kIOReturnSuccess;
     IOLog("IOVirtIONet: enable interface=%p\n", interface);
     if (fPollTimer)
-        fPollTimer->setTimeoutMS(5);
+        fPollTimer->setTimeoutMS(kPollMs);
     fEnabled = true;
     return kIOReturnSuccess;
 }
@@ -321,18 +352,76 @@ void IOVirtIONet::pollTimerAction(OSObject *owner, IOTimerEventSource *sender)
     IOVirtIONet *self = OSDynamicCast(IOVirtIONet, owner);
     if (!self)
         return;
-    self->pollReceive();
+    unsigned received = self->pollReceive();
+    if (self->fUseInterrupts)
+        self->checkLostInterrupt(received);
     if (self->fEnabled)
-        sender->setTimeoutMS(5);
+        sender->setTimeoutMS(self->fUseInterrupts ? kFallbackPollMs : kPollMs);
 }
 
-void IOVirtIONet::pollReceive()
+// The pci nub's first interrupt is the legacy intx line, as in IOVirtIOBlock::setupInterrupt.
+// start() masks intx until this handler exists, so a level line is never left asserted.
+bool IOVirtIONet::setupInterrupt()
 {
-    bool reposted = false;
+    int type = 0;
+
+    if (fPCIDevice->getInterruptType(0, &type) != kIOReturnSuccess)
+        return false;
+    fInterruptSource = IOInterruptEventSource::interruptEventSource(this,
+        OSMemberFunctionCast(IOInterruptEventAction, this, &IOVirtIONet::interruptOccurred),
+        fPCIDevice, 0);
+    if (!fInterruptSource || fWorkLoop->addEventSource(fInterruptSource) != kIOReturnSuccess) {
+        OSSafeReleaseNULL(fInterruptSource);
+        return false;
+    }
+    fUseInterrupts = true;
+    fInterruptSource->enable();
+    fPCIDevice->configWrite16(kIOPCIConfigCommand,
+        fPCIDevice->configRead16(kIOPCIConfigCommand) & ~kIOPCICommandInterruptDisable);
+    return true;
+}
+
+void IOVirtIONet::stopInterrupt()
+{
+    fUseInterrupts = false;
+    fPCIDevice->configWrite16(kIOPCIConfigCommand,
+        fPCIDevice->configRead16(kIOPCIConfigCommand) | kIOPCICommandInterruptDisable);
+    fInterruptSource->disable();
+}
+
+// Runs on the work loop. Frames the timer finds although no interrupt arrived since its last tick
+// mean the line is not delivered; a frame racing the interrupt resets the count on the next tick.
+void IOVirtIONet::checkLostInterrupt(unsigned received)
+{
+    if (received == 0 || fInterrupts != fInterruptsAtTick) {
+        fLostTicks = 0;
+    } else if (++fLostTicks >= kLostTicks) {
+        IOLog("IOVirtIONet: frames arrive without an interrupt, polling every %u ms\n", kPollMs);
+        stopInterrupt();
+    }
+    fInterruptsAtTick = fInterrupts;
+}
+
+// Runs on the work loop with the level line masked; reading the isr acknowledges it and drops
+// the line, so it is read before the used ring and a frame landing meanwhile raises it again.
+void IOVirtIONet::interruptOccurred(IOInterruptEventSource *, int)
+{
+    if (!(fTransport.readIsr() & 1))
+        return;
+    fInterrupts++;
+    if (fEnabled)
+        pollReceive();
+}
+
+unsigned IOVirtIONet::pollReceive()
+{
+    unsigned received = 0;
     uint32_t len; uint16_t id;
 
-    while (fTransport.pollForCompletion(&fRxQ, 0, &len, &id)) {
-        if (id < kVNetRxCount && len > kVNetHdrSize && len <= kVNetHdrSize + kVNetMaxPacket) {
+    // one ring's worth per pass, so the input queue is flushed under sustained load; frames
+    // left behind arrived during the pass and raised the interrupt again
+    while (received < fRxCount && fTransport.pollForCompletion(&fRxQ, 0, &len, &id)) {
+        if (id < fRxCount && len > kVNetHdrSize && len <= kVNetHdrSize + kVNetMaxPacket) {
             size_t pktLen = len - kVNetHdrSize;
             uint8_t *payload = (uint8_t *)fRxBuf[id]->getBytesNoCopy() + kVNetHdrSize;
 
@@ -347,21 +436,29 @@ void IOVirtIONet::pollReceive()
                     fInterface->inputPacket(m, (UInt32)pktLen, IONetworkInterface::kInputOptionQueuePacket);
             }
         }
-        if (id < kVNetRxCount)
+        if (id < fRxCount)
             postRxBuffer(id); // hand the same buffer back to the device
-        reposted = true;
+        received++;
     }
 
-    // Also reclaim any finished TX slots so outputPacket() doesn't stall
-    // waiting for a free one under sustained send load.
-    while (fTransport.pollForCompletion(&fTxQ, 0, 0, 0)) {
-        if (fTxOutstanding) fTxOutstanding--;
-    }
+    // tx completions raise no interrupt, so every pass collects them too
+    IOLockLock(fTxLock);
+    reclaimTxLocked();
+    IOLockUnlock(fTxLock);
 
-    if (reposted)
+    if (received)
         fTransport.notify(&fRxQ);
     if (fInterface)
         fInterface->flushInputQueue();
+    return received;
+}
+
+// caller holds fTxLock
+void IOVirtIONet::reclaimTxLocked()
+{
+    while (fTransport.pollForCompletion(&fTxQ, 0, 0, 0)) {
+        if (fTxOutstanding) fTxOutstanding--;
+    }
 }
 
 UInt32 IOVirtIONet::outputPacket(mbuf_t m, void *param)
@@ -372,13 +469,16 @@ UInt32 IOVirtIONet::outputPacket(mbuf_t m, void *param)
         return kIOReturnOutputDropped;
     }
 
-    if (fTxOutstanding >= kVNetTxCount) {
+    IOLockLock(fTxLock);
+    reclaimTxLocked();
+    if (fTxOutstanding >= fTxCount) {
         // Ring full - give the device a brief window to drain before
         // dropping (no backpressure signaling to the output queue yet).
         uint32_t len; uint16_t id;
         if (fTransport.pollForCompletion(&fTxQ, 50, &len, &id) && fTxOutstanding)
             fTxOutstanding--;
-        if (fTxOutstanding >= kVNetTxCount) {
+        if (fTxOutstanding >= fTxCount) {
+            IOLockUnlock(fTxLock);
             freePacket(m);
             return kIOReturnOutputDropped;
         }
@@ -395,8 +495,9 @@ UInt32 IOVirtIONet::outputPacket(mbuf_t m, void *param)
     fTransport.notify(&fTxQ);
 
     fTxOutstanding++;
-    fTxNextSlot = (fTxNextSlot + 1) % kVNetTxCount;
+    fTxNextSlot = (fTxNextSlot + 1) % fTxCount;
     fTxPackets++;
+    IOLockUnlock(fTxLock);
 
     freePacket(m);
     return kIOReturnOutputSuccess;

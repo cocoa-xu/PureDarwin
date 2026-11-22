@@ -10,6 +10,8 @@
 
 #include <IOKit/IOService.h>
 #include <IOKit/IOBufferMemoryDescriptor.h>
+#include <IOKit/IOInterruptEventSource.h>
+#include <IOKit/IOLocks.h>
 #include <IOKit/IOTimerEventSource.h>
 #include <IOKit/IOWorkLoop.h>
 #include <IOKit/pci/IOPCIDevice.h>
@@ -17,8 +19,8 @@
 #include <IOKit/network/IOEthernetInterface.h>
 #include "IOVirtIOTransport.h"
 
-#define kVNetRxCount     32
-#define kVNetTxCount     32
+#define kVNetRxCount     256  // upper bound, the device may offer smaller queues
+#define kVNetTxCount     256
 #define kVNetMaxPacket   2048
 #define kVNetHdrSize     12   // struct virtio_net_hdr_v1 (VERSION_1 always negotiated)
 
@@ -53,6 +55,7 @@ private:
     IOVirtIOTransport  fTransport;
     IOWorkLoop        *fWorkLoop;
     IOTimerEventSource *fPollTimer;
+    IOInterruptEventSource *fInterruptSource;
     IOEthernetInterface *fInterface;
 
     VirtQueue fRxQ; // queue index 0
@@ -60,8 +63,16 @@ private:
 
     IOBufferMemoryDescriptor *fRxBuf[kVNetRxCount]; // hdr+packet, one descriptor each
     IOBufferMemoryDescriptor *fTxBuf[kVNetTxCount];
+    uint16_t fRxCount; // negotiated queue sizes, at most kVNetRxCount/kVNetTxCount
+    uint16_t fTxCount;
     uint32_t fTxNextSlot;
     uint32_t fTxOutstanding;
+    IOLock  *fTxLock;  // outputPacket runs on the sender's thread, completions are also taken on the work loop
+
+    bool     fUseInterrupts;
+    uint32_t fInterrupts;
+    uint32_t fInterruptsAtTick;
+    uint32_t fLostTicks;
 
     IOEthernetAddress fMACAddress;
     bool     fEnabled;
@@ -71,7 +82,12 @@ private:
     bool     readMACAddress();
     bool     initRxRing();
     void     postRxBuffer(unsigned slot);
-    void     pollReceive();
+    unsigned pollReceive();
+    void     reclaimTxLocked();
+    bool     setupInterrupt();
+    void     stopInterrupt();
+    void     checkLostInterrupt(unsigned received);
+    void     interruptOccurred(IOInterruptEventSource *sender, int count);
     bool     publishLinkMedium();
     static void pollTimerAction(OSObject *owner, IOTimerEventSource *sender);
 };
