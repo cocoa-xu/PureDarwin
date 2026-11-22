@@ -127,16 +127,16 @@
         "nixpkgs": "nixpkgs_4"
       },
       "locked": {
-        "lastModified": 1792426596,
-        "narHash": "sha256-wIoUvHjCV2TXM/4uVChr+av77hMlsRHJB5AFLostA4U=",
-        "owner": "PureDarwin",
+        "lastModified": 1795305451,
+        "narHash": "sha256-h/2+XvP8/AYLF2dmjEiXqN/xxDoba1+XsvPe0/FO1Gk=",
+        "owner": "cocoa-xu",
         "repo": "xnu-loader",
-        "rev": "2e0ccce2bd88eec1194e78eaeb46a91601478555",
+        "rev": "170dc0e68c172aeeb90f95f1d172109cb11da93c",
         "type": "github"
       },
       "original": {
-        "owner": "PureDarwin",
-        "ref": "xnu-12377",
+        "owner": "cocoa-xu",
+        "ref": "darwin-container",
         "repo": "xnu-loader",
         "type": "github"
       }

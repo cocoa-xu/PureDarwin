@@ -3,7 +3,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
     iig-tools.url = "github:PureDarwin/iig-tools";
     kc-tools.url = "github:PureDarwin/kc-tools/xnu-12377";
-    xnu-loader.url = "github:PureDarwin/xnu-loader/xnu-12377";
+    xnu-loader.url = "github:cocoa-xu/xnu-loader/darwin-container";
     # the interim corecrypto fork, the submodule at external/corecrypto
     self.submodules = true;
     # the MOK key pair that signs Secure Boot images, a placeholder until a build overrides it with
