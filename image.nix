@@ -450,7 +450,7 @@ EOF
 #!/bin/sh
 case " $(/bin/sysctl -n kern.bootargs) " in
 *" pd_ip="*)
-    /bin/netsetup --from-bootargs
+    /bin/netsetup --from-bootargs && /usr/bin/killall mdnsd
     ;;
 esac
 EOF
