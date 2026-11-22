@@ -450,7 +450,10 @@ EOF
 #!/bin/sh
 case " $(/bin/sysctl -n kern.bootargs) " in
 *" pd_ip="*)
-    /bin/netsetup --from-bootargs && /usr/bin/killall mdnsd
+    # mdnsd reads resolv.conf only when it starts, and launchd may have started it already
+    resolv=$(/bin/cat /etc/resolv.conf 2>/dev/null)
+    /bin/netsetup --from-bootargs &&
+        [ "$(/bin/cat /etc/resolv.conf 2>/dev/null)" != "$resolv" ] && /usr/bin/killall mdnsd
     ;;
 esac
 EOF
