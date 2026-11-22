@@ -1413,7 +1413,8 @@ let
         apfsprogs = pkgs.apfsprogs;
         efiBinary = "BOOTAA64.EFI";
         espMB = 64;
-        rootMB = 1024;
+        # an 8 GiB disk: the GPT's 1 MiB at each end, the ESP and the root
+        rootMB = 8126;
         imageFileName = "puredarwin-arm64-virt-container.img";
         bootArgs = "serial=3 pd_rtc_wait=5 pd_rtc_delay=0 pd_quiet_wait=0";
       };
