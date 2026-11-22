@@ -1392,10 +1392,17 @@ let
         mkdir -p $out/private/var/db
         touch $out/private/var/db/.launchd_no_per_user $out/private/var/db/.launchd_keep_tmp
       '';
+      # no console login: a container is driven through its own agent, and without a console UART
+      # (Virtualization.framework) the login's zsh spins in the console path and blocks shutdown
+      containerBaseSystemArm64 = pkgs.runCommand "puredarwin-basesystem-arm64-virt-container-0.1" { } ''
+        cp -a ${splitBaseSystemArm64VirtMinimalRelease} $out
+        chmod -R u+w $out
+        rm $out/System/Library/LaunchDaemons/org.puredarwin.console-login.plist
+      '';
       # the minimal release plus the frameworks command-line tools link most (adb: Security; curl:
       # SystemConfiguration; anything with gettext: CoreServices), for running macOS CLIs in a VM
       imageArm64VirtContainerBuild = pkgs.callPackage ../image.nix {
-        baseSystem = splitBaseSystemArm64VirtMinimalRelease;
+        baseSystem = containerBaseSystemArm64;
         extraPackages = [
           zshArm64Build libiconvArm64Build toyboxArm64Build
           securityArm64Build systemConfigurationNoConfigdArm64 coreServicesArm64Build
