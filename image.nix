@@ -171,6 +171,13 @@ let
       ln -sfn "$target" "$link"
     done
 
+    # macOS binaries link Foundation as Versions/C, and some software reads /etc through /private/etc
+    foundation="$staging/System/Library/Frameworks/Foundation.framework/Versions"
+    if [ -d "$foundation/A" ] && [ ! -e "$foundation/C" ]; then
+      ln -s A "$foundation/C"
+    fi
+    [ -e "$staging/private/etc" ] || ln -s ../etc "$staging/private/etc"
+
     for dylib in "$staging"/lib/*.dylib; do
       [ -e "$dylib" ] || continue
       base=$(basename "$dylib")
