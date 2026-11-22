@@ -9,13 +9,18 @@
  * to probe - this only needs to satisfy the calling convention (requested
  * size in %rax, every other register including flags preserved, no
  * stack frame of its own) and return.
+ *
+ * ____chkstk_darwin comes from pthread_asm.s everywhere but arm32. Do not
+ * label this code with it there too: the linker keeps pthread's, strips this
+ * atom, and ___chkstk_darwin is left at the next function's address
+ * (sandbox_check, which zeroes x0).
  */
     .text
     .globl ___chkstk_darwin
-    .globl ____chkstk_darwin
 ___chkstk_darwin:
-____chkstk_darwin:
 #if defined(__arm__)
+    .globl ____chkstk_darwin
+____chkstk_darwin:
     bx lr
 #else
     /* arm64 and x86 both return with ret; only arm32 uses bx lr. */
