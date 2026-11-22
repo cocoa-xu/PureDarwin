@@ -450,10 +450,10 @@ EOF
 #!/bin/sh
 case " $(/bin/sysctl -n kern.bootargs) " in
 *" pd_ip="*)
-    # mdnsd reads resolv.conf only when it starts, and launchd may have started it already
+    # launchd may have started mdnsd on the old resolv.conf; SIGHUP makes it take the new servers
     resolv=$(/bin/cat /etc/resolv.conf 2>/dev/null)
     /bin/netsetup --from-bootargs &&
-        [ "$(/bin/cat /etc/resolv.conf 2>/dev/null)" != "$resolv" ] && /usr/bin/killall mdnsd
+        [ "$(/bin/cat /etc/resolv.conf 2>/dev/null)" != "$resolv" ] && /usr/bin/killall -HUP mdnsd
     ;;
 esac
 EOF

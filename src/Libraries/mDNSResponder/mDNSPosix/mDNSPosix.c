@@ -855,7 +855,6 @@ mDNSexport void FreeEtcHosts(mDNS *const m, AuthRecord *const rr, mStatus result
 mDNSexport mDNSBool mDNSPlatformSetDNSConfig(mDNSBool setservers, mDNSBool setsearch, domainname *const fqdn, DNameListElem **RegDomains,
     DNameListElem **BrowseDomains, mDNSBool ackConfig)
 {
-    (void) setservers;
     (void) setsearch;
     (void) ackConfig;
 
@@ -863,19 +862,13 @@ mDNSexport mDNSBool mDNSPlatformSetDNSConfig(mDNSBool setservers, mDNSBool setse
     if (RegDomains   ) *RegDomains     = NULL;
     if (BrowseDomains) *BrowseDomains  = NULL;
 
-    /* Return "configuration unchanged".
-     *
-     * uDNS_SetupDNSConfig() marks every entry in m->DNSServers for deletion,
-     * calls this, and only restores them when this returns false - a true
-     * return means "the configuration changed and I have supplied the new
-     * servers". This platform supplies none: on Posix the server list comes
-     * from ParseDNSServers() reading /etc/resolv.conf, and setservers is
-     * ignored here entirely. Returning true therefore claimed a change that
-     * never happened and left every server flagged DNSServerFlag_Delete, so
-     * SetValidDNSServers() skipped them all and no unicast question ever had a
-     * server to send to (validDNSServers == 0, zero packets sent).
-     */
-    return mDNSfalse;
+    /* uDNS_SetupDNSConfig() holds the lock and has flagged every entry in
+     * m->DNSServers for deletion; a true return means "here are the new
+     * servers". Re-reading /etc/resolv.conf unflags the servers it still lists
+     * and adds the new ones, so the rest are dropped and their questions move.
+     * Without a readable server in the file, report no change: the flags are
+     * cleared and the old list stays, as an empty list sends nothing. */
+    return setservers && gPosixMDNS && ParseDNSServers(gPosixMDNS, uDNS_SERVERS_FILE) == 0;
 }
 
 mDNSexport mStatus mDNSPlatformGetPrimaryInterface(mDNSAddr * v4, mDNSAddr * v6, mDNSAddr * router)

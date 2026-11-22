@@ -46,6 +46,7 @@ extern int daemon(int, int);
 #include "mDNSEmbeddedAPI.h"
 #include "DNSCommon.h"      // For mDNS_Lock()/mDNS_Unlock()
 #include "mDNSPosix.h"
+#include "uDNS.h"           // For uDNS_SetupDNSConfig()
 #include "mDNSUNP.h"        // For daemon()
 #include "uds_daemon.h"
 #include "PlatformCommon.h"
@@ -91,20 +92,12 @@ static void Reconfigure(mDNS *m)
     mDNSAddr DynDNSIP;
     const mDNSAddr dummy = { mDNSAddrType_IPv4, { { { 1, 1, 1, 1 } } } };;
     mDNS_SetPrimaryInterfaceInfo(m, NULL, NULL, NULL);
-    /* mDNS_AddDNSServer(), reached through ParseDNSServers(), is one of the few
-     * core entry points that expects the caller to already hold the lock - it
-     * asserts on m->mDNS_busy instead of taking it. Without this the daemon
-     * logs "mDNS_AddDNSServer: Lock not held!" at startup and installs the
-     * server list outside the core's serialisation. mDNSPlatformInit() wraps
-     * its own ParseDNSServers() call exactly the same way.
-     *
-     * The lock stays narrow: mDNS_SetPrimaryInterfaceInfo() and
-     * mDNS_ConfigChanged() (via its udsserver_handle_configchange callback)
-     * take it themselves, so holding it across them is a locking failure. */
-    mDNS_Lock(m);
-    if (ParseDNSServers(m, uDNS_SERVERS_FILE) < 0)
-        LogMsg("Unable to parse DNS server list. Unicast DNS-SD unavailable");
-    mDNS_Unlock(m);
+    /* Replace the server list with /etc/resolv.conf's (mDNSPlatformSetDNSConfig
+     * re-reads it under the lock uDNS_SetupDNSConfig takes): parsing the file
+     * here only appended, so a server it no longer lists stayed first in line.
+     * mDNS_SetPrimaryInterfaceInfo() and mDNS_ConfigChanged() take the lock
+     * themselves, so it is not held across them. */
+    uDNS_SetupDNSConfig(m);
     ReadDDNSSettingsFromConfFile(m, CONFIG_FILE, &DynDNSHostname, &DynDNSZone, NULL);
     mDNSPlatformSourceAddrForDest(&DynDNSIP, &dummy);
     if (DynDNSHostname.c[0]) mDNS_AddDynDNSHostName(m, &DynDNSHostname, NULL, NULL);
